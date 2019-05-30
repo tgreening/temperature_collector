@@ -1,0 +1,52 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+from django.shortcuts import render, get_object_or_404
+from django.views.decorators.csrf import csrf_exempt
+
+# Create your views here.
+from django.http import HttpResponse
+from datetime import datetime, date
+from dateutil import tz
+import json
+import logging
+
+from temperature.models import Probe, Reading
+
+def index(request):
+    return HttpResponse("This is the temperature site")
+
+@csrf_exempt
+def reading(request, probe_name):
+    probe_lookup = get_object_or_404(Probe, name=probe_name)
+    measurement = Reading(probe = probe_lookup, degrees = request.POST['degrees'], unit_of_measurement = request.POST['units'])
+    measurement.save()
+    return HttpResponse()
+
+def latest(request, probe_name):
+    from_zone = tz.gettz('UTC')
+    to_zone = tz.gettz('America/New_York')
+    probe = get_object_or_404(Probe, name=probe_name)
+    latest = Reading.objects.filter(probe_id=probe.id).order_by("-created_date")[:1]
+    formatted_datetime = latest[0].created_date.replace(tzinfo=from_zone).astimezone(to_zone).strftime("%-I:%M %p")
+    response = "The latest reading from %s is %d%s at %s" % (probe.name, latest[0].degrees, latest[0].unit_of_measurement, formatted_datetime)
+    return HttpResponse(response)
+
+def average(request, probe_name):
+    return HttpResponse("This will be the average page for %s" % probe_name)
+
+@csrf_exempt
+def ga(request, probe_name):
+    logger = logging.getLogger(__name__)
+    data = json.loads(request.body)
+    logger.debug("after json.loads...")
+    logger.debug(data['originalRequest']['data']['conversation']['conversationId'])
+    logger.debug('after logging body data....')
+    from_zone = tz.gettz('UTC')
+    to_zone = tz.gettz('America/New_York')
+    probe = get_object_or_404(Probe, name=probe_name)
+    latest = Reading.objects.filter(probe_id=probe.id).order_by("-created_date")[:1]
+    formatted_datetime = latest[0].created_date.replace(tzinfo=from_zone).astimezone(to_zone).strftime("%-I:%M %p")
+    text_to_say = "%s reported a temperature of %d%s at %s" % (probe.name, latest[0].degrees, latest[0].unit_of_measurement, formatted_datetime)
+    response = "'data': { 'google': {   'expectUserResponse': true,    'isSsml': false,    'noInputPrompts': [],    'richResponse': {      'items': [         {          'simpleResponse': {            'textToSpeech': ' %s',            'displayText': '%s'          }        }      ]    }  }}" % (text_to_say, text_to_say);
+    return HttpResponse(response)
